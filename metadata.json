@@ -1,0 +1,5 @@
+{
+  "name": "ScholarGraph",
+  "description": "An intelligent visualization tool that aggregates academic papers and citation metrics using Semantic Scholar and OpenAlex APIs. Visualize research impact without AI dependencies.",
+  "requestFramePermissions": []
+}
