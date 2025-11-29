@@ -4,7 +4,7 @@ import { PaperCard } from './PaperCard';
 import { fetchScholarData } from '../services/geminiService';
 import { ScholarProfile, LoadingState } from '../types';
 
-interface ScholarPapersProps {
+export interface ScholarPapersProps {
   username: string;
   limit?: number;
 }

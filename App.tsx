@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { ScholarPapers } from './components/ScholarPapers';
+import { ScholarPapers } from './lib';
 import { Button } from './components/ui/Button';
 
 function App() {

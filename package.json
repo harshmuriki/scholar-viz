@@ -1,22 +1,38 @@
+
 {
-  "name": "scholargraph",
-  "private": true,
-  "version": "0.0.0",
-  "type": "module",
+  "name": "scholar-papers-react",
+  "version": "1.0.0",
+  "description": "A lightweight React component that fetches and visualizes academic papers using Semantic Scholar and OpenAlex APIs.",
+  "main": "dist/index.js",
+  "module": "dist/index.mjs",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md"
+  ],
   "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "preview": "vite preview"
+    "build": "tsup lib.ts --format cjs,esm --dts",
+    "prepublishOnly": "npm run build"
   },
-  "dependencies": {
-    "recharts": "^3.5.1",
-    "react": "^19.2.0",
-    "react-dom": "^19.2.0"
+  "peerDependencies": {
+    "react": ">=16.8.0",
+    "react-dom": ">=16.8.0",
+    "recharts": "^3.0.0"
   },
   "devDependencies": {
-    "@types/node": "^22.14.0",
-    "@vitejs/plugin-react": "^5.0.0",
-    "typescript": "~5.8.2",
-    "vite": "^6.2.0"
-  }
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "tsup": "^8.0.2",
+    "typescript": "^5.0.0"
+  },
+  "keywords": [
+    "react",
+    "scholar",
+    "academic",
+    "papers",
+    "citation",
+    "research"
+  ],
+  "author": "",
+  "license": "MIT"
 }
