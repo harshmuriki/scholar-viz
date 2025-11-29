@@ -17,17 +17,20 @@ interface FilterSettings {
   maxYear: string;
 }
 
-const STORAGE_KEY = 'scholar_papers_settings';
+const SETTINGS_STORAGE_KEY = 'scholar_papers_settings';
+const CACHE_PREFIX = 'scholar_data_v1_';
+const CACHE_DURATION_MS = 24 * 60 * 60 * 1000; // 24 hours
 
 export const ScholarPapers: React.FC<ScholarPapersProps> = ({ username, limit = 50 }) => {
   const [profile, setProfile] = useState<ScholarProfile | null>(null);
   const [status, setStatus] = useState<LoadingState>(LoadingState.IDLE);
   const [error, setError] = useState<string | null>(null);
+  const [lastUpdated, setLastUpdated] = useState<number | null>(null);
 
   // Initialize settings from local storage or defaults
   const [settings, setSettings] = useState<FilterSettings>(() => {
     try {
-      const saved = localStorage.getItem(STORAGE_KEY);
+      const saved = localStorage.getItem(SETTINGS_STORAGE_KEY);
       return saved ? JSON.parse(saved) : { sortBy: 'citations_desc', minYear: '', maxYear: '' };
     } catch {
       return { sortBy: 'citations_desc', minYear: '', maxYear: '' };
@@ -36,30 +39,69 @@ export const ScholarPapers: React.FC<ScholarPapersProps> = ({ username, limit = 
 
   // Save settings to local storage whenever they change
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
+    try {
+      localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(settings));
+    } catch (e) {
+      console.warn('Failed to save settings to localStorage', e);
+    }
   }, [settings]);
 
-  // Fetch Data
-  useEffect(() => {
+  // Data Fetching Logic with Caching
+  const loadData = async (forceRefresh = false) => {
     if (!username) return;
 
-    const loadData = async () => {
-      setStatus(LoadingState.LOADING);
-      setError(null);
-      setProfile(null);
-      
+    setStatus(LoadingState.LOADING);
+    setError(null);
+    
+    const cacheKey = `${CACHE_PREFIX}${username.toLowerCase().trim()}`;
+    
+    // 1. Try Cache (if not forcing refresh)
+    if (!forceRefresh) {
       try {
-        const data = await fetchScholarData(username);
-        // We store the full raw data set here so we can filter/sort it locally
-        setProfile(data);
-        setStatus(LoadingState.COMPLETE);
-      } catch (err: any) {
-        console.error(err);
-        setError(err.message || "Failed to load papers.");
-        setStatus(LoadingState.ERROR);
+        const cachedRaw = localStorage.getItem(cacheKey);
+        if (cachedRaw) {
+          const cached = JSON.parse(cachedRaw);
+          const age = Date.now() - cached.timestamp;
+          
+          if (age < CACHE_DURATION_MS) {
+            setProfile(cached.data);
+            setLastUpdated(cached.timestamp);
+            setStatus(LoadingState.COMPLETE);
+            return; 
+          }
+        }
+      } catch (e) {
+        console.warn('Error reading from cache', e);
       }
-    };
+    }
 
+    // 2. Fetch from API
+    try {
+      const data = await fetchScholarData(username);
+      setProfile(data);
+      const now = Date.now();
+      setLastUpdated(now);
+      setStatus(LoadingState.COMPLETE);
+
+      // Save to cache
+      try {
+        localStorage.setItem(cacheKey, JSON.stringify({
+          timestamp: now,
+          data: data
+        }));
+      } catch (e) {
+        console.warn('Failed to save data to cache (likely quota exceeded)', e);
+      }
+
+    } catch (err: any) {
+      console.error(err);
+      setError(err.message || "Failed to load papers.");
+      setStatus(LoadingState.ERROR);
+    }
+  };
+
+  // Trigger fetch on username change
+  useEffect(() => {
     loadData();
   }, [username]);
 
@@ -68,7 +110,7 @@ export const ScholarPapers: React.FC<ScholarPapersProps> = ({ username, limit = 
     setSettings(prev => ({ ...prev, [key]: value }));
   };
 
-  // Filter, Sort, and Limit Logic
+  // Filter, Sort, and Limit Logic (Client-side)
   const displayedPapers = useMemo(() => {
     if (!profile) return [];
 
@@ -107,7 +149,7 @@ export const ScholarPapers: React.FC<ScholarPapersProps> = ({ username, limit = 
 
   if (!username) return null;
 
-  if (status === LoadingState.LOADING) {
+  if (status === LoadingState.LOADING && !profile) {
     return (
       <div className="w-full py-8 text-center space-y-4 animate-pulse">
         <div className="h-4 bg-slate-200 rounded w-1/4 mx-auto mb-8"></div>
@@ -122,13 +164,14 @@ export const ScholarPapers: React.FC<ScholarPapersProps> = ({ username, limit = 
 
   if (status === LoadingState.ERROR) {
     return (
-      <div className="p-4 bg-red-50 text-red-600 rounded-lg border border-red-100 text-sm">
-        Error: {error}
+      <div className="p-4 bg-red-50 text-red-600 rounded-lg border border-red-100 text-sm flex justify-between items-center">
+        <span>Error: {error}</span>
+        <button onClick={() => loadData(true)} className="text-red-700 underline font-medium">Retry</button>
       </div>
     );
   }
 
-  if (!profile || profile.papers.length === 0) {
+  if (!profile && status === LoadingState.COMPLETE) {
     return (
       <div className="p-4 bg-slate-50 text-slate-500 rounded-lg border border-slate-100 text-center">
         No papers found for "{username}".
@@ -138,14 +181,30 @@ export const ScholarPapers: React.FC<ScholarPapersProps> = ({ username, limit = 
 
   return (
     <div className="font-sans">
+      {/* Header & Controls */}
       <div className="mb-6 border-b border-slate-200 pb-4">
         <div className="flex flex-col md:flex-row md:items-baseline md:justify-between mb-4">
             <div>
-              <h2 className="text-2xl font-bold text-slate-900">{profile.name}</h2>
-              <p className="text-slate-500 text-sm">{profile.affiliation}</p>
+              <h2 className="text-2xl font-bold text-slate-900">{profile?.name}</h2>
+              <p className="text-slate-500 text-sm">{profile?.affiliation}</p>
             </div>
-            <div className="mt-2 md:mt-0 text-xs font-mono bg-slate-100 px-2 py-1 rounded text-slate-500">
-              Showing {displayedPapers.length} of {profile.papers.length} Fetched
+            
+            <div className="mt-2 md:mt-0 flex items-center gap-3">
+              {lastUpdated && (
+                <span className="text-xs text-slate-400" title={new Date(lastUpdated).toLocaleString()}>
+                  Updated {new Date(lastUpdated).toLocaleDateString()}
+                </span>
+              )}
+              <button 
+                onClick={() => loadData(true)}
+                disabled={status === LoadingState.LOADING}
+                className="text-xs font-medium text-indigo-600 hover:bg-indigo-50 px-2 py-1 rounded transition-colors"
+              >
+                {status === LoadingState.LOADING ? 'Refreshing...' : 'Refresh Data'}
+              </button>
+              <div className="text-xs font-mono bg-slate-100 px-2 py-1 rounded text-slate-500">
+                {displayedPapers.length} / {profile?.papers.length} Papers
+              </div>
             </div>
         </div>
 
@@ -156,7 +215,7 @@ export const ScholarPapers: React.FC<ScholarPapersProps> = ({ username, limit = 
                 <span className="text-slate-500 font-medium">Sort:</span>
                 <select 
                     value={settings.sortBy}
-                    onChange={(e) => updateSetting('sortBy', e.target.value)}
+                    onChange={(e) => updateSetting('sortBy', e.target.value as SortOption)}
                     className="bg-white border border-slate-200 text-slate-700 rounded-md px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer hover:border-indigo-400 transition-colors"
                 >
                     <option value="citations_desc">Most Cited</option>
@@ -187,6 +246,7 @@ export const ScholarPapers: React.FC<ScholarPapersProps> = ({ username, limit = 
         </div>
       </div>
 
+      {/* List */}
       <div className="space-y-3">
         {displayedPapers.length > 0 ? (
             displayedPapers.map((paper, index) => (
